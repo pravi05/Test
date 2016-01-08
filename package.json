@@ -1,0 +1,35 @@
+{
+  "name": "TK-API-V1",
+  "version": "0.0.1",
+  "scripts": {
+    "start": "node Server.js"
+  },
+  "description": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website.",
+  "author": "Tentkotta Offshore Development Team",
+  "contributors": [
+    {
+      "name": "Dhruva N",
+      "email": "dhruva@vuedata.com"
+    },
+	{
+      "name": "Rakesh V Kadamur",
+      "email": "rakesh@vuedata.com"
+    },
+	{
+      "name": "Barani Dharan",
+      "email": "barani@vuedata.com"
+    }
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "MD5": "^1.3.0",
+    "async": "^1.5.0",
+    "body-parser": "^1.14.1",
+    "express": "^4.13.3",
+    "mysql": "^2.9.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tentkotta/TK-API-V1.git"
+  }
+}
