@@ -3,7 +3,9 @@ var mysql = require("mysql");
 var bodyParser = require("body-parser");
 var md5 = require('MD5');
 var rest = require("./Rest.js");
+var cors = require('cors')
 var app = express();
+app.use(cors())
 
 function REST() {
     var self = this;

@@ -1,7 +1,4 @@
 var mysql = require("mysql");
-var fs = require('fs');
-var url = require('url');
-var querystring = require('querystring');
 var async = require('async');
 var http = require('http');
 
@@ -14,6 +11,73 @@ function REST_ROUTER(router, connection, md5) {
 
 REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 	var self = this;
+
+	self.handleDisconnect = function () {
+		connection = mysql.createConnection(connection.config);
+		connection.connect(function(err) {
+			if(err) {
+				console.log('Error while connecting to DB: ', err);
+				setTimeout(self.handleDisconnect, 2000);
+			}
+		});
+		connection.on('error', function(err) {
+			console.log('DB Error: ', err);
+			if(err.code == 'PROTOCOL_CONNECTION_LOST' || err.code == 'ECONNREFUSED') {
+				setTimeout(self.handleDisconnect, 2000);
+			} else {
+				throw err;
+			}
+		});
+	}
+
+	self.insertAccessToken = function (deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus) {
+		var postData = JSON.stringify({
+		  'deviceId' : deviceId,
+		  'deviceType' : deviceType
+		});
+		var options = {
+		  hostname: reqHostname,
+		  port: reqPort,
+		  path: '/tkapi/v1/pin',
+		  method: 'POST',
+		  headers: {
+			'Content-Type': 'application/JSON',
+			'Content-Length': postData.length
+		  }
+		};
+		var req = http.request(options, function(res) {
+		  res.setEncoding('utf8');
+		  res.on('data', function(chunk) {
+			var response = JSON.parse(chunk);
+			if (response != undefined && response.error == undefined && response.httpCode == 200) {
+				var update_query = "UPDATE api_access_security SET user_id = " + user_id + ", access_token = '" + accessToken
+					+ "', access_token_status = '" + profileStatus + "' WHERE security_code = '" + response.response.securityCode + "'";
+				connection.query(update_query, function(err) {
+					if (err) {
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+							self.handleDisconnect();
+							self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus);
+						} else {
+							console.log(JSON.stringify({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Error executing MySQL query: " + update_query
+							}));
+						}
+					}
+				});
+			} else {
+				console.log('Problem with response: ' + chunk);
+			}
+		  });
+		});
+		req.on('error', function(e) {
+		  console.log('Problem with request: ' + e.message);
+		});
+		req.write(postData);
+		req.end();
+	}
+	
 	router.get("/", function(req, res) {
 		res.json({
 			"Message": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website."
@@ -28,11 +92,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var security_query = "SELECT * FROM security_codes WHERE used = 0 LIMIT 1";
 			connection.query(security_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + security_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + security_query
+						});
+					}
 				} else if (rows != null && rows.length > 0) {
 					var pin_value = appendValues[index] + rows[0].code;
 					var insert_update_query = "UPDATE security_codes SET used = 1 WHERE id = " + rows[0].id
@@ -40,11 +113,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 						+ pin_value + "'," + Math.floor(Date.now() / 1000).toString() + ",'" + req.body.deviceId + "','" + req.body.deviceType + "')";
 					connection.query(insert_update_query, function(err, rows2) {
 						if (err) {
-							res.json({
-								"error": true,
-								"errorCode": err.code,
-								"message": "Error executing MySQL query: " + insert_update_query
-							});
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+								self.handleDisconnect();
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Error executing MySQL query: " + insert_update_query
+								});
+							}
 						} else {
 							res.json({
 								"httpCode": 200,
@@ -71,22 +153,40 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			+ " ORDER BY subscription_id DESC LIMIT 1; SELECT device_id, device_type FROM api_access_security WHERE security_code = '" + req.body.pin + "'";
 		connection.query(subscription_token_query, function(err, rows) {
 			if (err) {
-				res.json({
-					"error": true,
-					"errorCode": err.code,
-					"message": "Error executing MySQL query: " + subscription_token_query
-				});
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+					self.handleDisconnect();
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Error executing MySQL query: " + subscription_token_query
+					});
+				}
 			} else if (rows != null && rows.length == 2 && rows[0].length > 0 && rows[1].length > 0) {
 				var access_token = Base64.encode((req.body.userId + "|" + rows[1][0].device_id + "|" + rows[1][0].device_type).toString());
 				var update_query = "UPDATE api_access_security SET user_id = " + req.body.userId + ", access_token = '" + access_token
 					+ "', access_token_status = '" + rows[0][0].profile_status + "' WHERE security_code = '" + req.body.pin + "'";
 				connection.query(update_query, function(err) {
 					if (err) {
-						res.json({
-							"error": true,
-							"errorCode": err.code,
-							"message": "Error executing MySQL query: " + update_query
-						});
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+							self.handleDisconnect();
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+							});
+						} else {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Error executing MySQL query: " + update_query
+							});
+						}
 					} else {
 						res.json({
 							"httpCode": 200,
@@ -112,11 +212,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		var access_token_query = "SELECT access_token, access_token_status FROM api_access_security WHERE security_code = '" + req.params.pinValue + "'";
 		connection.query(access_token_query, function(err, rows) {
 			if (err) {
-				res.json({
-					"error": true,
-					"errorCode": err.code,
-					"message": "Error executing MySQL query: " + access_token_query
-				});
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+					self.handleDisconnect();
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Error executing MySQL query: " + access_token_query
+					});
+				}
 			} else if (rows != null && rows.length > 0) {
 				res.json({
 					"httpCode": 200,
@@ -152,11 +261,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		if (user_query != "") {
 			connection.query(user_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_query
+						});
+					}
 				} else if (rows == null || rows.length == 0) {
 					res.json({
 						"error": true,
@@ -170,17 +288,26 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 					var deviceType = req.body.deviceType;
 					var reqHostname = req.get('host').split(":")[0];
 					var reqPort = req.get('host').split(":")[1];
-					
-					var subscription_query = "SELECT profile_status FROM subscription WHERE user_id = " + user_id 
+
+					var subscription_query = "SELECT profile_status FROM subscription WHERE user_id = " + user_id
 						+ " ORDER BY subscription_id DESC LIMIT 1; SELECT access_token, access_token_status FROM api_access_security WHERE user_id = "
 						+ user_id + " AND device_id = " + deviceId + " AND device_type = '" + deviceType + "'";
 					connection.query(subscription_query, function(err, rows1) {
 						if (err) {
-							res.json({
-								"error": true,
-								"errorCode": err.code,
-								"message": "Error executing MySQL query: " + subscription_query
-							});
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+								self.handleDisconnect();
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Error executing MySQL query: " + subscription_query
+								});
+							}
 						} else {
 							if (rows1.length == 2 && rows1[1].length > 0 && rows1[1][0].access_token != undefined) {
 								res.json({
@@ -197,48 +324,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 									"accessToken": accessToken,
 									"accessTokenStatus": rows1[0][0].profile_status
 								});
-								
-								var postData = JSON.stringify({
-								  'deviceId' : deviceId,
-								  'deviceType' : deviceType
-								});
-								var options = {
-								  hostname: reqHostname,
-								  port: reqPort,
-								  path: '/tkapi/v1/pin',
-								  method: 'POST',
-								  headers: {
-									'Content-Type': 'application/JSON',
-									'Content-Length': postData.length
-								  }
-								};
-								var req = http.request(options, function(res) {
-								  res.setEncoding('utf8');
-								  res.on('data', function(chunk) {
-									var response = JSON.parse(chunk);
-									if (response != undefined && response.error == undefined && response.httpCode == 200) {
-										var update_query = "UPDATE api_access_security SET user_id = " + user_id + ", access_token = '" + accessToken
-											+ "', access_token_status = '" + rows1[0][0].profile_status + "' WHERE security_code = '" + response.response.securityCode + "'";
-										connection.query(update_query, function(err) {
-											if (err) {
-												console.log(JSON.stringify({
-													"error": true,
-													"errorCode": err.code,
-													"message": "Error executing MySQL query: " + update_query
-												}));
-											}
-										});
-									} else {
-										console.log('Problem with response: ' + chunk);
-									}
-								  });
-								});
-								req.on('error', function(e) {
-								  console.log('Problem with request: ' + e.message);
-								});
-								req.write(postData);
-								req.end();
-								
+								self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, rows1[0][0].profile_status);
 							} else {
 								res.json({
 									"name": rows[0].firstname + " " + rows[0].lastname,
@@ -253,7 +339,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			});
 		}
 	});
-
+	
 	router.get("/categories/:accessToken", function(req, res) {
 		var result = {
 			"httpCode": 200,
@@ -265,21 +351,39 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		var access_query = "SELECT * FROM api_access_security WHERE access_token = '" + req.params.accessToken + "'";
 		connection.query(access_query, function(err, rows1) {
 			if (err) {
-				res.json({
-					"error": true,
-					"errorCode": err.code,
-					"message": "Error executing MySQL query: " + access_query
-				});
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+					self.handleDisconnect();
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Error executing MySQL query: " + access_query
+					});
+				}
 			} else if (rows1 != null && rows1 != undefined && rows1.length > 0) {
 				if (rows1[0].access_token_status == "Active") {
 					var group_query = 'SELECT DISTINCT group_id, group_name, group_order, group_icon_selected, group_icon_unselected, group_icon_hover FROM groups_categories';
 					connection.query(group_query, function(err, rows) {
 						if (err) {
-							res.json({
-								"error": true,
-								"errorCode": err.code,
-								"message": "Error executing MySQL query: " + group_query
-							});
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+								self.handleDisconnect();
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Error executing MySQL query: " + group_query
+								});
+							}
 						} else if (rows != null && rows != undefined && rows.length > 0) {
 							var ids = [];
 							for (var i = 0; i < rows.length; i++) {
@@ -298,11 +402,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 								var category_query = 'SELECT DISTINCT group_id, category_id, category_name, category_order FROM groups_categories WHERE group_id = ' + id;
 								connection.query(category_query, function(err, rows2, callback) {
 									if (err) {
-										res.json({
-											"error": true,
-											"errorCode": err.code,
-											"message": "Error executing MySQL query: " + category_query
-										});
+										if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+											self.handleDisconnect();
+											res.json({
+												"error": true,
+												"errorCode": err.code,
+												"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+											});
+										} else {
+											res.json({
+												"error": true,
+												"errorCode": err.code,
+												"message": "Error executing MySQL query: " + category_query
+											});
+										}
 									} else if (rows2 != null && rows2 != undefined && rows2.length > 0) {
 										for (var j = 0; j < rows2.length; j++) {
 											result.response.categoryGroups[ids.indexOf(id)].categories.push({
@@ -364,11 +477,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		var grp_cat_query = 'SELECT * FROM `groups_categories` WHERE group_id = ' + grp + ' AND category_id = ' + cat;
 		connection.query(grp_cat_query, function(err, rows1) {
 			if (err) {
-				res.json({
-					"error": true,
-					"errorCode": err.code,
-					"message": "Error executing MySQL query: " + grp_cat_query
-				});
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+					self.handleDisconnect();
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Error executing MySQL query: " + grp_cat_query
+					});
+				}
 			} else if (rows1 != null && rows1 != undefined && rows1.length == 1) {
 				var movies_query = rows1[0].query;
 				var splitStr = movies_query.split("<replace>");
@@ -391,11 +513,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				movies_query = splitStr.join("");
 				connection.query(movies_query, function(err, rows) {
 					if (err) {
-						res.json({
-							"error": true,
-							"errorCode": err.code,
-							"message": "Error executing MySQL query: " + movies_query
-						});
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+							self.handleDisconnect();
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+							});
+						} else {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Error executing MySQL query: " + movies_query
+							});
+						}
 					} else if (rows != null && rows != undefined && rows.length > 0) {
 						if (cnt == 0 || cnt > rows.length) {
 							result.response["count"] = rows.length;
@@ -403,6 +534,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 						for (var i = 0; i < rows.length; i++) {
 							result.response.message.push({
 								"movie_id": rows[i].video_id,
+								"video_title": rows[i].video_title,
 								"tv_image": "https://www.tentkotta.com/images/video_images/1280_480/" + rows[i].video_key + "_1.jpg",
 								"device_image": "https://www.tentkotta.com/images/video_images/216_312/" + rows[i].video_key + "_1.jpg",
 								"web_image": "https://www.tentkotta.com/images/video_images/210_270/" + rows[i].video_key + "_1.jpg"
@@ -463,14 +595,23 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				var search_query = 'SELECT * FROM video WHERE video_id = ' + queryParams.id;
 				connection.query(search_query, function(err, rows) {
 					if (err) {
-						res.json({
-							"error": true,
-							"errorCode": err.code,
-							"message": "Error executing MySQL query: " + search_query
-						});
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+							self.handleDisconnect();
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+							});
+						} else {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Error executing MySQL query: " + search_query
+							});
+						}
 					} else if (rows != null && rows != undefined && rows.length == 1) {
 						result.response.message.push({
-							"video_id": rows[0].video_id,
+							"movie_id": rows[0].video_id,
 							"tv_image": "https://www.tentkotta.com/images/video_images/1280_480/" + rows[0].video_key + "_1.jpg",
 							"device_image": "https://www.tentkotta.com/images/video_images/216_312/" + rows[0].video_key + "_1.jpg",
 							"web_image": "https://www.tentkotta.com/images/video_images/210_270/" + rows[0].video_key + "_1.jpg",
@@ -503,17 +644,26 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				var grp_cat_query = 'SELECT * FROM `groups_categories` WHERE group_id = ' + grp + ' AND category_id = ' + cat;
 				connection.query(grp_cat_query, function(err, rows1) {
 					if (err) {
-						res.json({
-							"error": true,
-							"errorCode": err.code,
-							"message": "Error executing MySQL query: " + grp_cat_query
-						});
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+							self.handleDisconnect();
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+							});
+						} else {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Error executing MySQL query: " + grp_cat_query
+							});
+						}
 					} else if (rows1 != null && rows1 != undefined && rows1.length == 1) {
 						var movies_query = rows1[0].query;
 						var splitStr = movies_query.split("<replace>");
 						var replaceStr = "";
 						var currDate = Math.floor(Date.now() / 1000).toString();
-						
+
 						if (splitStr[1].indexOf("date") != -1) {
 							if (queryParams.id != '' && queryParams.id != undefined) {
 								splitStr[1] += queryParams.id;
@@ -529,11 +679,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 
 						connection.query(movies_query, function(err, rows) {
 							if (err) {
-								res.json({
-									"error": true,
-									"errorCode": err.code,
-									"message": "Error executing MySQL query: " + movies_query
-								});
+								if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+									self.handleDisconnect();
+									res.json({
+										"error": true,
+										"errorCode": err.code,
+										"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+									});
+								} else {
+									res.json({
+										"error": true,
+										"errorCode": err.code,
+										"message": "Error executing MySQL query: " + movies_query
+									});
+								}
 							} else if (rows != null && rows != undefined && rows.length == 1) {
 								result.response.message.push({
 									"video_id": rows[0].video_id,
@@ -591,11 +750,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			+ req.params.name + "%' AND category_status= 1 and  video_status = 1 and expiry_date>=" + Math.floor(Date.now() / 1000).toString() + " ORDER BY video_order ASC";
 		connection.query(search_query, function(err, rows) {
 			if (err) {
-				res.json({
-					"error": true,
-					"errorCode": err.code,
-					"message": "Error executing MySQL query: " + search_query
-				});
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+					self.handleDisconnect();
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Error executing MySQL query: " + search_query
+					});
+				}
 			} else if (rows != null && rows != undefined && rows.length > 0) {
 				for (var i = 0; i < rows.length; i++) {
 					result.response.count = rows.length;
@@ -632,11 +800,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var user_query = "SELECT * FROM user_movies where user_id = " + tokenParams[0];
 			connection.query(user_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_query
+						});
+					}
 				} else if (rows != null && rows != undefined && rows.length > 0) {
 					for (var i = 0; i < rows.length; i++) {
 						result.movies.push({
@@ -673,11 +850,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var user_query = "SELECT * FROM user_playlists WHERE user_id = " + tokenParams[0];
 			connection.query(user_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_query
+						});
+					}
 				} else if (rows != null && rows != undefined && rows.length > 0) {
 					for (var i = 0; i < rows.length; i++) {
 						result.playlists.push({
@@ -712,11 +898,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var user_movies_query = '';
 			connection.query(user_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_query
+						});
+					}
 				} else if (rows != null && rows != undefined && rows.length > 0 && movies != null && movies != undefined && movies.length > 0) {
 					for (var i = 0; i < rows.length; i++) {
 						for (var j = 0; j < movies.length; j++) {
@@ -737,11 +932,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				if (user_movies_query != '') {
 					connection.query(user_movies_query, function(err) {
 						if (err) {
-							res.json({
-								"error": true,
-								"errorCode": err.code,
-								"message": "Error executing MySQL query: " + user_movies_query
-							});
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+								self.handleDisconnect();
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Error executing MySQL query: " + user_movies_query
+								});
+							}
 						} else {
 							res.json({
 								"httpCode": 200,
@@ -761,7 +965,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			});
 		}
 	});
-	
+
 	router.post("/user/playlists", function(req, res) {
 		var tokenParams = Base64.decode(req.body.accessToken).split("|");
 		if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
@@ -776,11 +980,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var user_playlists_query = '';
 			connection.query(user_query, function(err, rows) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_query
+						});
+					}
 				} else if (rows != null && rows != undefined && rows.length > 0 && playlists != null && playlists != undefined && playlists.length > 0) {
 					for (var i = 0; i < rows.length; i++) {
 						for (var j = 0; j < playlists.length; j++) {
@@ -801,11 +1014,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				if (user_playlists_query != '') {
 					connection.query(user_playlists_query, function(err) {
 						if (err) {
-							res.json({
-								"error": true,
-								"errorCode": err.code,
-								"message": "Error executing MySQL query: " + user_playlists_query
-							});
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+								self.handleDisconnect();
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Error executing MySQL query: " + user_playlists_query
+								});
+							}
 						} else {
 							res.json({
 								"httpCode": 200,
@@ -838,11 +1060,20 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 			var user_playlists_query = "DELETE FROM user_playlists WHERE user_id=" + tokenParams[0] + ' AND playlist_id IN (' + req.body.playlistId + ');';
 			connection.query(user_playlists_query, function(err) {
 				if (err) {
-					res.json({
-						"error": true,
-						"errorCode": err.code,
-						"message": "Error executing MySQL query: " + user_playlists_query
-					});
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+						self.handleDisconnect();
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Database connection has been lost. Please wait for at lease 2000 milliseconds before retrying."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Error executing MySQL query: " + user_playlists_query
+						});
+					}
 				} else {
 					res.json({
 						"httpCode": 200,
