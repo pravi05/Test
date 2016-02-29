@@ -1,0 +1,20 @@
+clear
+echo "Knowlwdge is power. :)"
+echo "Restarting APIs..."
+pm2 delete all
+if [ $? -eq 0 ]; then
+	test=0
+	while [ $test -eq 0 ]
+	do
+		kill $(netstat -nltp | grep '3000' | awk '{print $7}' | awk 'BEGIN { FS="/"; } { print $1; }')
+		test=$?
+	done
+else
+	echo "APIs failed to restart."
+fi
+pm2 start Server.js -i 4
+if [ $? -eq 0 ]; then
+	echo "APIs restarted successfully."
+else
+	echo "APIs failed to restart."
+fi
