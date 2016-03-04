@@ -290,9 +290,10 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     }
 
     router.get("/", function(req, res) {
-        res.json({
-            "message": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website."
-        });
+		res.json({
+			"message": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website.",
+			"dbState": connection.state
+		});
     });
     //1
     router.post("/pin", function(req, res) {
@@ -629,7 +630,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                                     "userStatus": user_status,
                                     "accessToken": rows1[1][0].access_token,
                                     "accessTokenStatus": rows1[1][0].access_token_status,
-									"subscriptionEndDate": (rows1[0].length > 0 ? rows1[0][0].billing_date : 1 * 1000).toDateString()
+									"subscriptionEndDate": new Date((rows1[0].length > 0 ? rows1[0][0].billing_date : 1) * 1000).toDateString()
                                 });
                             } else if (rows1.length == 2 && rows1[0].length > 0) {
                                 var accessToken = Base64.encode((user_id + "|" + deviceId + "|" + deviceType).toString());
@@ -639,7 +640,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                                     "userStatus": user_status,
                                     "accessToken": accessToken,
                                     "accessTokenStatus": profile_status,
-									"subscriptionEndDate": (rows1[0][0].billing_date * 1000).toDateString()
+									"subscriptionEndDate": new Date(rows1[0][0].billing_date * 1000).toDateString()
                                 });
                                 self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profile_status);
                             } else {

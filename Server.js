@@ -18,11 +18,11 @@ REST.prototype.connectMysql = function() {
     var self = this;
     var pool = mysql.createPool({
         connectionLimit: 100,
-        host: '104.238.80.141',
-        user: 'tent_net',
-        password: 'YceVGfu8pCBe',
+        host: 'localhost',
+        user: 'root',
+        password: 'root',
         port: 3306,
-        database: 'tent_net',
+        database: 'local_tentkotta',
 		multipleStatements : 'Allow',
         debug: false
     });
