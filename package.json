@@ -27,9 +27,9 @@
     "body-parser": "^1.14.2",
     "cors": "^2.7.1",
     "express": "^4.13.3",
+    "https": "~1.0.0",
     "mysql": "^2.10.2",
-    "winston": "^2.1.1",
-    "https": "~1.0.0"
+    "winston": "^2.1.1"
   },
   "repository": {
     "type": "git",
