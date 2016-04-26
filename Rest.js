@@ -1,5 +1,7 @@
 var mysql = require("mysql");
 var async = require('async');
+var FB = require('fb');
+var mailer = require('mailer');
 var logger = require("./utils/logger");
 var express = require("express");
 var app = express();
@@ -40,9 +42,7 @@ function REST_ROUTER(router, connection, md5) {
 REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     var self = this;
     var retryCnt = 1;
-	var deviceTypes = ["AppleTV", "AmazonTV", "SmartTV", "SmartPhone", "TizenTV", "Tablet", "RokuTV", "iPhone", "iPad", "Laptop"];
-	var appendValues = ["A", "M", "S", "D", "T", "B", "R", "I", "P", "L"];
-    var groups_categories = [{
+	var groups_categories = [{
         "groupId": "1",
         "groupOrder": "1",
         "groupName": "Tamil",
@@ -172,7 +172,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         "groupIconSelected": "https://www.tentkotta.com/images/Menu_Images/05b.png",
         "groupIconHover": "https://www.tentkotta.com/images/Menu_Images/05c.png",
         "groupStatus": "0",
-        "videoType": "3",
+        "videoType": "5",
         "categories": [{
             "categoryId": "1",
             "categoryOrder": "1",
@@ -208,12 +208,10 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //0
     self.handleDisconnect = function(apiId) {
             if (retryCnt <= 5) {
-                //logger.error('Handling DB disconnect during ' + apiId + ' API execution for ' + retryCnt + ' time.');
                 retryCnt++;
                 connection = mysql.createConnection(connection.config);
                 connection.connect(function(err) {
                     if (err) {
-                        //logger.error('Error while connecting to DB: ' + err);
                         setTimeout(function() {
 							self.handleDisconnect(apiId);
 						}, 2000);
@@ -244,104 +242,8 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                 return false;
             }
         }
-        //4.3
-    self.insertAccessToken = function(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus) {
-        var body = {
-			'deviceId': deviceId,
-			'deviceType': deviceType
-		}
-		var index = deviceTypes.indexOf(body.deviceType);
-        
-		if (index > -1) {
-            var security_query = "SELECT * FROM api_security_codes WHERE used = 0 LIMIT 1";
-            connection.query({sql:security_query,timeout:7500}, function(err, rows) {
-                if (err) {
-                    if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.4)) {
-                        logger.error({
-                            "error": true,
-                            "errorCode": err.code,
-                            "message": "DB connection was lost. Please try again."
-                        });
-                    } else {
-                        logger.error({
-                            "id": 4.3,
-                            "input": body,
-                            "query": security_query,
-							"errorCode": err.code,
-                            "message": "Query did not return required results"
-                        });
-                    }
-                } else if (rows != undefined && rows.length == 1) {
-                    var pin_value = appendValues[index] + rows[0].code;
-                    var insert_update_query = "UPDATE api_security_codes SET used = 1 WHERE id = " + rows[0].id + "; DELETE FROM api_access_tokens WHERE device_id = '" + body.deviceId + "' AND device_type = '" + body.deviceType + "'; INSERT INTO api_access_tokens (security_code, creation_date, device_id, device_type) VALUES ('" + pin_value + "'," + Math.floor(Date.now() / 1000).toString() + ",'" + body.deviceId + "','" + body.deviceType + "')";
-                    connection.query({sql:insert_update_query,timeout:7500}, function(err, rows1) {
-                        if (err) {
-                            if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.5)) {
-                                logger.error({
-                                    "error": true,
-                                    "errorCode": err.code,
-                                    "message": "DB connection was lost. Please try again."
-                                });
-                            } else {
-                                logger.error({
-                                    "id": 4.3,
-                                    "input": body,
-                                    "query": insert_update_query,
-									"errorCode": err.code,
-                                    "message": "Query did not return required results"
-                                });
-                            }
-                        } else if (rows1 != undefined && rows1.affectedRows != 0) {
-                            var update_query = "UPDATE api_access_tokens SET user_id = " + user_id + ", access_token = '" + accessToken + "', access_token_status = '" + profileStatus + "' WHERE access_token IS NULL AND security_code = '" + pin_value + "'";
-							connection.query({sql:update_query,timeout:7500}, function(err, rows) {
-								if (err) {
-									if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
-										self.handleDisconnect(4.3);
-										self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus);
-									} else {
-										logger.error({
-											"id": 4.3,
-											"input": [deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus],
-											"query": update_query,
-											"error": err,
-											"message": "Query did not return required results"
-										});
-									}
-								} else if (rows.affectedRows == 0) {
-									logger.error({
-										"id": 4.3,
-										"input": [deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus],
-										"query": update_query,
-										"message": "Update statement failed."
-									});
-								}
-							});
-                        } else {
-                            logger.error({
-                                "id": 4.3,
-                                "input": body,
-                                "message": "Insert/Update statement failed. No rows affected."
-                            });
-                        }
-                    });
-                } else {
-                    logger.error({
-                        "id": 4.3,
-                        "input": body,
-                        "message": "Security Codes Expired. Please contact system administrator."
-                    });
-                }
-            });
-        } else {
-            logger.error({
-                "id": 4.3,
-                "input": body,
-                "message": "Invalid Parameter(s): deviceType"
-            });
-        }
-	}
-
-    router.get("/", function(req, res) {
+    //Root API
+	router.get("/", function(req, res) {
 		res.json({
 			"message": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website.",
 			"dbState": connection.state
@@ -349,102 +251,88 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     });
     //1
     router.post("/pin", function(req, res) {
-        var index = deviceTypes.indexOf(req.body.deviceType);
-        if (index > -1) {
-            var security_query = "SELECT * FROM api_security_codes WHERE used = 0 LIMIT 1";
-            connection.query({sql:security_query,timeout:7500}, function(err, rows) {
-                if (err) {
-                    if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(1.1)) {
-                        res.json({
-                            "error": true,
-                            "errorCode": err.code,
-                            "message": "DB connection was lost. Please try again."
-                        });
-                    } else {
-                        res.json({
-                            "error": true,
-                            "errorCode": err.code,
-                            "message": "Query did not return required results"
-                        });
-                        logger.error({
-                            "id": 1,
-                            "input": req.body,
-                            "query": security_query,
-							"errorCode": err.code,
-                            "message": "Query did not return required results"
-                        });
-                    }
-                } else if (rows != undefined && rows.length == 1) {
-                    var pin_value = appendValues[index] + rows[0].code;
-                    var insert_update_query = "UPDATE api_security_codes SET used = 1 WHERE id = " + rows[0].id + "; DELETE FROM api_access_tokens WHERE device_id = '" + req.body.deviceId + "' AND device_type = '" + req.body.deviceType + "'; INSERT INTO api_access_tokens (security_code, creation_date, device_id, device_type) VALUES ('" + pin_value + "'," + Math.floor(Date.now() / 1000).toString() + ",'" + req.body.deviceId + "','" + req.body.deviceType + "')";
-                    connection.query({sql:insert_update_query,timeout:7500}, function(err, rows1) {
-                        if (err) {
-                            if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(1.2)) {
-                                res.json({
-                                    "error": true,
-                                    "errorCode": err.code,
-                                    "message": "DB connection was lost. Please try again."
-                                });
-                            } else {
-                                res.json({
-                                    "error": true,
-                                    "errorCode": err.code,
-                                    "message": "Query did not return required results"
-                                });
-                                logger.error({
-                                    "id": 1,
-                                    "input": req.body,
-                                    "query": insert_update_query,
-									"errorCode": err.code,
-                                    "message": "Query did not return required results"
-                                });
-                            }
-                        } else if (rows1 != undefined && rows1.affectedRows != 0) {
-                            res.json({
-                                "httpCode": 200,
-                                "response": {
-                                    "securityCode": pin_value,
-                                    "expireTime": "120"
-                                }
-                            });
-                        } else {
-                            res.json({
-                                "error": true,
-                                "errorCode": 205,
-                                "message": "Insert/Update statement failed. No rows affected."
-                            });
-                            logger.error({
-                                "id": 1,
-                                "input": req.body,
-                                "message": "Insert/Update statement failed. No rows affected."
-                            });
-                        }
-                    });
-                } else {
-                    res.json({
-                        "error": true,
-                        "errorCode": 204,
-                        "message": "Security Codes Expired. Please contact system administrator."
-                    });
-                    logger.error({
-                        "id": 1,
-                        "input": req.body,
-                        "message": "Security Codes Expired. Please contact system administrator."
-                    });
-                }
-            });
-        } else {
-            res.json({
-                "error": true,
-                "errorCode": 201,
-                "message": "Invalid Parameter(s): deviceType"
-            });
-            /* logger.error({
-                "id": 1,
-                "input": req.body,
-                "message": "Invalid Parameter(s): deviceType"
-            }); */
-        }
+		var security_query = "SELECT * FROM api_security_codes WHERE used = 0 LIMIT 1";
+		connection.query({sql:security_query,timeout:7500}, function(err, rows) {
+			if (err) {
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(1.1)) {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "DB connection was lost. Please try again."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+					logger.error({
+						"id": 1,
+						"input": req.body,
+						"query": security_query,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+				}
+			} else if (rows != undefined && rows.length == 1) {
+				var pin_value = rows[0].code;
+				var insert_update_query = "UPDATE api_security_codes SET used = 1 WHERE id = " + rows[0].id + "; DELETE FROM api_access_tokens WHERE device_id = '" + req.body.deviceId + "' AND device_type = '" + req.body.deviceType + "'; INSERT INTO api_access_tokens (security_code, creation_date, device_id, device_type) VALUES ('" + pin_value + "'," + Math.floor(Date.now() / 1000).toString() + ",'" + req.body.deviceId + "','" + req.body.deviceType + "')";
+				connection.query({sql:insert_update_query,timeout:7500}, function(err, rows1) {
+					if (err) {
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(1.2)) {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "DB connection was lost. Please try again."
+							});
+						} else {
+							res.json({
+								"error": true,
+								"errorCode": err.code,
+								"message": "Query did not return required results"
+							});
+							logger.error({
+								"id": 1,
+								"input": req.body,
+								"query": insert_update_query,
+								"errorCode": err.code,
+								"message": "Query did not return required results"
+							});
+						}
+					} else if (rows1 != undefined && rows1.affectedRows != 0) {
+						res.json({
+							"httpCode": 200,
+							"response": {
+								"securityCode": pin_value,
+								"expireTime": "120"
+							}
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": 205,
+							"message": "Insert/Update statement failed. No rows affected."
+						});
+						logger.error({
+							"id": 1,
+							"input": req.body,
+							"message": "Insert/Update statement failed. No rows affected."
+						});
+					}
+				});
+			} else {
+				res.json({
+					"error": true,
+					"errorCode": 204,
+					"message": "Security Codes Expired. Please contact system administrator."
+				});
+				logger.error({
+					"id": 1,
+					"input": req.body,
+					"message": "Security Codes Expired. Please contact system administrator."
+				});
+			}
+		});
     });
     //2
     router.post("/accessToken", function(req, res) {
@@ -540,11 +428,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                     "errorCode": 201,
                     "message": "Invalid Parameter(s): userId/pin"
                 });
-                /* logger.error({
-                    "id": 2,
-                    "input": req.body,
-                    "message": "Invalid Parameter(s): userId/pin"
-                }); */
             }
         });
 
@@ -590,146 +473,223 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                     "errorCode": 201,
                     "message": "Invalid Parameter(s): pinVaue"
                 });
-                /* logger.error({
-                    "id": 3,
-                    "input": req.params,
-                    "message": "Invalid Parameter(s): pinVaue"
-                }); */
             }
         });
     });
-    //4
-    router.post("/user/login", function(req, res) {
-		var index = deviceTypes.indexOf(req.body.deviceType);
-        if (index > -1) {
-        var user_query = "SELECT user_id, firstname, lastname, user_status FROM users WHERE email = '" + req.body.email;
-        if (req.body.facebookAccessToken == "" && req.body.password != "") {
-            user_query += "' AND password = '" + md5(req.body.password) + "'";
-        } else if (req.body.facebookAccessToken != "" && req.body.password == "") {
-            user_query += "' AND fb_session_key = '" + req.body.facebookAccessToken + "'";
-        } else {
-            user_query = "";
-            res.json({
-                "error": true,
-                "errorCode": 201,
-                "message": "Invalid Parameter(s): password/facebookAccessToken"
-            });
-            /* logger.error({
-                "id": 4,
-                "input": req.body,
-                "message": "Invalid Parameter(s): password/facebookAccessToken"
-            }); */
-        }
-        if (user_query != "") {
-            connection.query({sql:user_query,timeout:7500}, function(err, rows) {
-                if (err) {
-                    if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.1)) {
-                        res.json({
-                            "error": true,
-                            "errorCode": err.code,
-                            "message": "DB connection was lost. Please try again."
-                        });
-                    } else {
-                        res.json({
-                            "error": true,
-                            "errorCode": err.code,
-                            "message": "Query did not return required results"
-                        });
-                        logger.error({
-                            "id": 4,
-                            "input": req.body,
-                            "query": user_query,
+    //4.1
+	self.continueLogin = function(req, res, user_query) {
+		if (user_query != "") {
+			connection.query({sql:user_query,timeout:7500}, function(err, rows) {
+				if (err) {
+					if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.1)) {
+						res.json({
+							"error": true,
 							"errorCode": err.code,
-                            "message": "Query did not return required results"
-                        });
-                    }
-                } else if (rows == undefined || rows.length == 0) {
-                    res.json({
-                        "error": true,
-                        "errorCode": 201,
-                        "message": "Invalid Parameter(s): email/password/facebookAccessToken"
-                    });
-                    /* logger.error({
-                        "id": 4,
-                        "input": req.body,
-                        "message": "Invalid Parameter(s): email/password/facebookAccessToken"
-                    }); */
-                } else {
-                    var user_id = rows[0].user_id;
-                    var user_status = rows[0].user_status == 1 ? "Active" : "Inactive";
-                    var deviceId = req.body.deviceId;
-                    var deviceType = req.body.deviceType;
-                    var reqHostname = req.get('host').split(":")[0];
-                    var reqPort = req.get('host').split(":")[1];
-						var subscription_query = "SELECT billing_date FROM subscription WHERE user_id = " + user_id + " ORDER BY billing_date DESC LIMIT 1; SELECT access_token, access_token_status FROM api_access_tokens WHERE user_id = " + user_id + " AND device_id = '" + deviceId + "' AND device_type = '" + deviceType + "'";
-                    connection.query({sql:subscription_query,timeout:7500}, function(err, rows1) {
-                        if (err) {
-                            if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.2)) {
-                                res.json({
-                                    "error": true,
-                                    "errorCode": err.code,
-                                    "message": "DB connection was lost. Please try again."
-                                });
-                            } else {
-                                res.json({
-                                    "error": true,
-                                    "errorCode": err.code,
-                                    "message": "Query did not return required results"
-                                });
-                                logger.error({
-                                    "id": 4,
-                                    "input": req.body,
-                                    "query": subscription_query,
+							"message": "DB connection was lost. Please try again."
+						});
+					} else {
+						res.json({
+							"error": true,
+							"errorCode": err.code,
+							"message": "Query did not return required results"
+						});
+						logger.error({
+							"id": 4.1,
+							"input": req.body,
+							"query": user_query,
+							"errorCode": err.code,
+							"message": "Query did not return required results"
+						});
+					}
+				} else if (rows == undefined || rows.length == 0) {
+					res.json({
+						"error": true,
+						"errorCode": 201,
+						"message": "Invalid Parameter(s): email/password/facebookAccessToken"
+					});
+				} else {
+					var user_id = rows[0].user_id;
+					var user_status = rows[0].user_status == 1 ? "Active" : "Inactive";
+					var name = rows[0].firstname == rows[0].lastname ? rows[0].firstname : rows[0].firstname + ' ' + rows[0].lastname;
+					var deviceId = req.body.deviceId;
+					var deviceType = req.body.deviceType;
+					var reqHostname = req.get('host').split(":")[0];
+					var reqPort = req.get('host').split(":")[1];
+					var subscription_query = "SELECT billing_date FROM subscription WHERE user_id = " + user_id + " ORDER BY billing_date DESC LIMIT 1; SELECT access_token, access_token_status FROM api_access_tokens WHERE user_id = " + user_id + " AND device_id = '" + deviceId + "' AND device_type = '" + deviceType + "'";
+					connection.query({sql:subscription_query,timeout:7500}, function(err, rows1) {
+						if (err) {
+							if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.2)) {
+								res.json({
+									"error": true,
 									"errorCode": err.code,
-                                    "message": "Query did not return required results"
-                                });
-                            }
-                        } else {
-                            if (rows1.length == 2 && rows1[1].length > 0 && rows1[1][0].access_token != undefined) {
-                                res.json({
-                                    "name": rows[0].firstname + " " + rows[0].lastname,
-                                    "userStatus": user_status,
-                                    "accessToken": rows1[1][0].access_token,
-                                    "accessTokenStatus": rows1[1][0].access_token_status,
+									"message": "DB connection was lost. Please try again."
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Query did not return required results"
+								});
+								logger.error({
+									"id": 4.1,
+									"input": req.body,
+									"query": subscription_query,
+									"errorCode": err.code,
+									"message": "Query did not return required results"
+								});
+							}
+						} else {
+							if (rows1.length == 2 && rows1[1].length > 0 && rows1[1][0].access_token != undefined) {
+								res.json({
+									"name": name,
+									"userStatus": user_status,
+									"accessToken": rows1[1][0].access_token,
+									"accessTokenStatus": rows1[1][0].access_token_status,
 									"subscriptionEndDate": new Date((rows1[0].length > 0 ? rows1[0][0].billing_date : 1) * 1000).toDateString()
-                                });
-                            } else if (rows1.length == 2 && rows1[0].length > 0) {
-                                var accessToken = Base64.encode((user_id + "|" + deviceId + "|" + deviceType).toString());
-                                var profile_status = (rows1[0][0].billing_date >= Math.floor(Date.now() / 1000)) ? "Active" : "Cancelled";
-                                res.json({
-                                    "name": rows[0].firstname + " " + rows[0].lastname,
-                                    "userStatus": user_status,
-                                    "accessToken": accessToken,
-                                    "accessTokenStatus": profile_status,
+								});
+							} else if (rows1.length == 2 && rows1[0].length > 0) {
+								var accessToken = Base64.encode((user_id + "|" + deviceId + "|" + deviceType).toString());
+								var profile_status = (rows1[0][0].billing_date >= Math.floor(Date.now() / 1000)) ? "Active" : "Cancelled";
+								res.json({
+									"name": name,
+									"userStatus": user_status,
+									"accessToken": accessToken,
+									"accessTokenStatus": profile_status,
 									"subscriptionEndDate": new Date(rows1[0][0].billing_date * 1000).toDateString()
-                                });
-                                self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profile_status);
-                            } else {
-                                res.json({
-                                    "name": rows[0].firstname + " " + rows[0].lastname,
-                                    "userStatus": user_status,
-                                    "accessToken": "",
-                                    "accessTokenStatus": "",
+								});
+								self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profile_status);
+							} else {
+								res.json({
+									"name": name,
+									"userStatus": user_status,
+									"accessToken": "",
+									"accessTokenStatus": "",
 									"subscriptionEndDate": ""
-                                });
-                            }
-                        }
-                    });
-                }
+								});
+							}
+						}
+					});
+				}
+			});
+		}
+	}
+	//4.2
+	self.insertAccessToken = function(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus) {
+        var body = {
+			'deviceId': deviceId,
+			'deviceType': deviceType
+		}
+		var security_query = "SELECT * FROM api_security_codes WHERE used = 0 LIMIT 1";
+		connection.query({sql:security_query,timeout:7500}, function(err, rows) {
+			if (err) {
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.3)) {
+					logger.error({
+						"error": true,
+						"errorCode": err.code,
+						"message": "DB connection was lost. Please try again."
+					});
+				} else {
+					logger.error({
+						"id": 4.2,
+						"input": body,
+						"query": security_query,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+				}
+			} else if (rows != undefined && rows.length == 1) {
+				var pin_value = rows[0].code;
+				var insert_update_query = "UPDATE api_security_codes SET used = 1 WHERE id = " + rows[0].id + "; DELETE FROM api_access_tokens WHERE device_id = '" + body.deviceId + "' AND device_type = '" + body.deviceType + "'; INSERT INTO api_access_tokens (security_code, creation_date, device_id, device_type) VALUES ('" + pin_value + "'," + Math.floor(Date.now() / 1000).toString() + ",'" + body.deviceId + "','" + body.deviceType + "')";
+				connection.query({sql:insert_update_query,timeout:7500}, function(err, rows1) {
+					if (err) {
+						if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(4.4)) {
+							logger.error({
+								"error": true,
+								"errorCode": err.code,
+								"message": "DB connection was lost. Please try again."
+							});
+						} else {
+							logger.error({
+								"id": 4.2,
+								"input": body,
+								"query": insert_update_query,
+								"errorCode": err.code,
+								"message": "Query did not return required results"
+							});
+						}
+					} else if (rows1 != undefined && rows1.affectedRows != 0) {
+						var update_query = "UPDATE api_access_tokens SET user_id = " + user_id + ", access_token = '" + accessToken + "', access_token_status = '" + profileStatus + "' WHERE access_token IS NULL AND security_code = '" + pin_value + "'";
+						connection.query({sql:update_query,timeout:7500}, function(err, rows) {
+							if (err) {
+								if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR') {
+									self.handleDisconnect(4.5);
+									self.insertAccessToken(deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus);
+								} else {
+									logger.error({
+										"id": 4.2,
+										"input": [deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus],
+										"query": update_query,
+										"error": err,
+										"message": "Query did not return required results"
+									});
+								}
+							} else if (rows.affectedRows == 0) {
+								logger.error({
+									"id": 4.2,
+									"input": [deviceId, deviceType, reqHostname, reqPort, user_id, accessToken, profileStatus],
+									"query": update_query,
+									"message": "Update statement failed."
+								});
+							}
+						});
+					} else {
+						logger.error({
+							"id": 4.2,
+							"input": body,
+							"message": "Insert/Update statement failed. No rows affected."
+						});
+					}
+				});
+			} else {
+				logger.error({
+					"id": 4.2,
+					"input": body,
+					"message": "Security Codes Expired. Please contact system administrator."
 				});
 			}
+		});
+	}
+	//4
+    router.post("/user/login", function(req, res) {
+		if (req.body.facebookAccessToken != "" && req.body.password == "") {
+			FB.setAccessToken(req.body.facebookAccessToken);
+			FB.api('fql', { q: 'SELECT uid FROM user WHERE uid=me()' }, function (result) {
+				if(!result || result.error) {
+					logger.error(!result ? 'error occurred' : result.error);
+				} else if (result.data != undefined && result.data.length > 0) {
+					var user_query = "SELECT user_id, firstname, lastname, user_status FROM users WHERE email = '" + req.body.email + "' AND fb_user_id = '" + result.data[0].uid + "'";
+					self.continueLogin(req, res, user_query);
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": 201,
+						"message": "Invalid Parameter(s): facebookAccessToken"
+					});
+				}
+			});
+		} else if (req.body.facebookUserId != "" && req.body.password == "") {
+			var user_query = "SELECT user_id, firstname, lastname, user_status FROM users WHERE email = '" + req.body.email + "' AND fb_user_id = '" + req.body.facebookUserId + "'";
+			self.continueLogin(req, res, user_query);
+		} else if (req.body.facebookAccessToken == "" && req.body.password != "") {
+			var user_query = "SELECT user_id, firstname, lastname, user_status FROM users WHERE email = '" + req.body.email + "' AND password = '" + md5(req.body.password) + "'";
+			self.continueLogin(req, res, user_query);
 		} else {
-            res.json({
-                "error": true,
-                "errorCode": 201,
-                "message": "Invalid Parameter(s): deviceType"
-            });
-            /* logger.error({
-                "id": 4,
-                "input": req.body,
-                "message": "Invalid Parameter(s): deviceType"
-            }); */
-        }
+			res.json({
+				"error": true,
+				"errorCode": 201,
+				"message": "Invalid Parameter(s): password/facebookAccessToken"
+			});
+		}
     });
     //5
     router.get("/categories/:accessToken", function(req, res) {
@@ -765,34 +725,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                     });
                 }
             } else if (rows != undefined && rows.length > 0) {
-                /*if (rows[0].billing_date >= Math.floor(Date.now() / 1000)) {
-                    result.response.categoryGroups = active_groups_categories;
-                    res.json(result);
-                } else if (rows[0].billing_date < Math.floor(Date.now() / 1000)) {
-                    res.json({
-                        "error": true,
-                        "errorCode": 204,
-                        "message": "User does not have a valid subscription."
-                    });
-                    logger.error({
-                        "id": 5,
-                        "input": req.params,
-                        "message": "User does not have a valid subscription"
-                    });
-                } else {
-                    res.json({
-                        "error": true,
-                        "errorCode": 202,
-                        "message": "Query did not return required results"
-                    });
-                    logger.error({
-                        "id": 5,
-                        "input": req.params,
-                        "query": access_query,
-                        "message": "Query did not return required results"
-                    });
-                }*/
-				if (rows[0].billing_date < Math.floor(Date.now() / 1000)) {
+                if (rows[0].billing_date < Math.floor(Date.now() / 1000)) {
                     result.response.status += ". Warning: User's subscription has expired.";
 					result.response.subscriptionStatus = "Cancelled";
                 } else {
@@ -801,17 +734,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				result.response.categoryGroups = active_groups_categories;
 				res.json(result);
             } else {
-                /*res.json({
-                    "error": true,
-                    "errorCode": 201,
-                    "message": "Invalid Parameter(s): accessToken"
-                });
-                logger.error({
-                    "id": 5,
-                    "input": req.params,
-                    "message": "Invalid Parameter(s): accessToken"
-                });*/
-				result.response.categoryGroups = active_groups_categories;
+                result.response.categoryGroups = active_groups_categories;
 				res.json(result);
             }
         });
@@ -850,7 +773,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				splitStr[1] = splitStr[1].indexOf("date") != -1 ? currDate : "";
 				movies_query = splitStr.join("");
 			}
-			
+
             connection.query({sql:movies_query,timeout:7500}, function(err, rows) {
                 if (err) {
                     if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(6.1)) {
@@ -926,17 +849,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         };
         var tokenParams = Base64.decode(queryParams.token).split('|');
 
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /* logger.error({
-                "id": 7,
-                "input": req.params,
-                "message": "Invalid Parameter(s): accessToken"
-            }); */
         } else {
             var grp = parseInt(queryParams.grp);
             var cat = parseInt(queryParams.cat);
@@ -1040,11 +958,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 							"errorCode": 201,
 							"message": "Invalid Parameter(s): accessToken"
 						});
-						/* logger.error({
-							"id": 7,
-							"input": req.params,
-							"message": "Invalid Parameter(s): accessToken"
-						}); */
 					}
                 });
             } else {
@@ -1068,7 +981,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 						}
 						splitStr[1] = replaceStr;
 					}
-						
+
                     movies_query = splitStr.join("") + '; SELECT IFNULL((SELECT user_watchlist_id FROM user_watchlists WHERE user_id = ' + tokenParams[0] + ' AND movies LIKE "%' + queryParams.id + '%"), 0) AS user_watchlist_id; SELECT IFNULL((SELECT rating FROM rating WHERE user_id = ' + tokenParams[0] + ' AND type_id = ' + queryParams.id + ' AND video_category = ' + grp + '), 0) AS userRating; SELECT billing_date FROM subscription WHERE user_id = (SELECT user_id FROM api_access_tokens WHERE access_token = "' + req.params.accessToken + '") ORDER BY billing_date DESC LIMIT 1';
 
                     if (videotype == 2) {
@@ -1167,11 +1080,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 								"errorCode": 201,
 								"message": "Invalid Parameter(s): accessToken"
 							});
-							/*logger.error({
-								"id": 7,
-								"input": req.params,
-								"message": "Invalid Parameter(s): accessToken"
-							});*/
 						}
                     });
                 } else {
@@ -1241,11 +1149,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                 }
                 res.json(result);
             } else {
-                res.json({
-                    "error": true,
-                    "errorCode": 202,
-                    "message": "Query did not return required results"
-                });
+                res.json(result);
                 logger.error({
                     "id": 8,
                     "input": req.params,
@@ -1262,17 +1166,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
             "httpCode": 200,
             "movies": []
         };
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 9,
-                "input": req.params,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_query = "SELECT * FROM user_movies where user_id = " + tokenParams[0];
             connection.query({sql:user_query,timeout:7500}, function(err, rows) {
@@ -1326,17 +1225,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //10
     router.post("/user/movies", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 10,
-                "input": req.body,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_query = "SELECT * FROM user_movies where user_id = " + tokenParams[0];
             var movies = req.body.movies;
@@ -1444,17 +1338,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
             "httpCode": 200,
             "watchlists": []
         };
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 11,
-                "input": req.params,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_query = "SELECT * FROM user_watchlists WHERE user_id = " + tokenParams[0];
             connection.query({sql:user_query,timeout:7500}, function(err, rows) {
@@ -1545,7 +1434,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                     }, function(err) {
                         if (err)
                             return next(err);
-                        //res.json(result);
                     });
                 } else {
                     res.json({
@@ -1553,13 +1441,116 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                         "errorCode": 202,
                         "message": "Query did not return required results"
                     });
-                    /*logger.error({
-                        "id": 11,
-                        "input": req.params,
-                        "query": user_query,
-                        "message": "Query did not return required results"
-                    });*/
-					//res.json(result);
+                }
+            });
+        }
+    });
+    //11-V2
+    router.get("/user/watchlistsV2/:accessToken", function(req, res) {
+        var tokenParams = Base64.decode(req.params.accessToken).split('|');
+        var result = {
+            "httpCode": 200,
+            "watchlists": []
+        };
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
+            res.json({
+                "error": true,
+                "errorCode": 201,
+                "message": "Invalid Parameter(s): accessToken"
+            });
+        } else {
+            var user_query = "SELECT * FROM user_watchlists WHERE user_id = " + tokenParams[0];
+            connection.query({sql:user_query,timeout:7500}, function(err, rows) {
+                if (err) {
+                    if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(11.1)) {
+                        res.json({
+                            "error": true,
+                            "errorCode": err.code,
+                            "message": "DB connection was lost. Please try again."
+                        });
+                    } else {
+                        res.json({
+                            "error": true,
+                            "errorCode": err.code,
+                            "message": "Query did not return required results"
+                        });
+                        logger.error({
+                            "id": 11,
+                            "input": req.params,
+                            "query": user_query,
+							"errorCode": err.code,
+                            "message": "Query did not return required results"
+                        });
+                    }
+                } else if (rows != undefined && rows.length > 0) {
+                    var ids = [];
+                    for (var i = 0; i < rows.length; i++) {
+                        result.watchlists.push({
+                            "watchlistId": rows[i].watchlist_id,
+                            "watchlistName": rows[i].watchlist_name,
+                            "count": 0,
+                            "movies": []
+                        });
+                        ids.push(rows[i].movies);
+                    }
+                    async.each(ids, function(id, next) {
+                        var movies_query = 'SELECT * FROM video WHERE video_id IN (' + id + ')';
+                        connection.query({sql:movies_query,timeout:7500}, function(err, rows1) {
+                            if (err) {
+                                if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(11.2)) {
+                                    res.json({
+                                        "error": true,
+                                        "errorCode": err.code,
+                                        "message": "DB connection was lost. Please try again."
+                                    });
+                                } else {
+                                    res.json({
+                                        "error": true,
+                                        "errorCode": err.code,
+                                        "message": "Query did not return required results"
+                                    });
+                                    logger.error({
+                                        "id": 11,
+                                        "input": req.params,
+                                        "query": movies_query,
+										"errorCode": err.code,
+                                        "message": "Query did not return required results"
+                                    });
+                                }
+                            } else if (rows1 != undefined && rows1.length > 0) {
+                                result.watchlists[ids.indexOf(id)].count = rows1.length;
+                                for (var i = 0; i < rows1.length; i++) {
+                                    result.watchlists[ids.indexOf(id)].movies.push({
+                                        "videoId": rows1[i].video_id,
+                                        "videoTitle": rows1[i].video_title,
+										"videoCategory": rows1[i].language_id,
+                                        "tvImage": "https://www.tentkotta.com/images/video_images/1280_480/" + rows1[i].video_key + "_1.jpg",
+                                        "deviceImage": "https://www.tentkotta.com/images/video_images/216_312/" + rows1[i].video_key + "_1.jpg",
+                                        "webImage": "https://www.tentkotta.com/images/video_images/210_270/" + rows1[i].video_key + "_1.jpg"
+                                    });
+                                }
+                                res.json(result);
+                            } else {
+                                res.json({
+                                    "error": true,
+                                    "errorCode": 202,
+                                    "message": "Query did not return required results"
+                                });
+                                logger.error({
+                                    "id": 11,
+                                    "input": req.params,
+                                    "query": movies_query,
+                                    "message": "Query did not return required results"
+                                });
+                            }
+                            next();
+                        });
+                    }, function(err) {
+                        if (err)
+                            return next(err);
+                    });
+                } else {
+                    res.json(result);
                 }
             });
         }
@@ -1567,17 +1558,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //12
     router.post("/user/watchlists", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 12,
-                "input": req.body,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_query = "SELECT * FROM user_watchlists WHERE user_id = " + tokenParams[0];
             var user_watchlists_query = '';
@@ -1687,17 +1673,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //13
     router.delete("/user/watchlists", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 13,
-                "input": req.body,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_watchlists_query = "DELETE FROM user_watchlists WHERE user_id=" + tokenParams[0] + ' AND watchlist_id IN (' + req.body.watchlistId + ');';
             connection.query({sql:user_watchlists_query,timeout:7500}, function(err, rows) {
@@ -1747,17 +1728,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //14
     router.post("/user/rating", function(req, res) {
 		var tokenParams = Base64.decode(req.body.accessToken).split("|");
-		if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+		if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
 			res.json({
 				"error": true,
 				"errorCode": 201,
 				"message": "Invalid Parameter(s): accessToken"
 			});
-			/*logger.error({
-				"id": 14,
-				"input": req.body,
-				"message": "Invalid Parameter(s): accessToken"
-			});*/
 		} else {
 			var rating_query = "SELECT * FROM rating where user_id = " + tokenParams[0] + " and type_id=" + req.body.videoId + " and video_category=" + req.body.videoCategory + "";
 			var videoid = req.body.videoId;
@@ -1929,17 +1905,12 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
     //15
 	router.post("/user/activity", function(req, res) {
 		var tokenParams = Base64.decode(req.body.accessToken).split("|");
-        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3 || deviceTypes.indexOf(tokenParams[2]) < 0) {
+        if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
                 "error": true,
                 "errorCode": 201,
                 "message": "Invalid Parameter(s): accessToken"
             });
-            /*logger.error({
-                "id": 15,
-                "input": req.body,
-                "message": "Invalid Parameter(s): accessToken"
-            });*/
         } else {
             var user_query = "SELECT * FROM api_activity_log WHERE user_id = " + tokenParams[0] + " AND video_id = " + req.body.videoId + " AND video_category = " + req.body.videoCategory + " AND device_id = '" + tokenParams[1] + "' AND device_type = '" + tokenParams[2] + "'";
             var user_activity_query = '';
@@ -2015,11 +1986,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                         }
                     });
                 } else {
-                    /*res.json({
-                        "error": true,
-                        "errorCode": 203,
-                        "message": "No details to save."
-                    });*/
                     logger.error({
                         "id": 15,
                         "input": req.body,
@@ -2045,6 +2011,136 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				});
 			} else {
 				res.json(JSON.parse(data));
+			}
+		});
+	});
+	//17
+	router.post("/user/forgotPwd", function(req, res) {
+		var emailId = req.body.email;
+		var email_query = "SELECT user_id, firstname, lastname, email, password, user_status FROM users WHERE email =  '" + emailId + "' limit 1; SELECT smtp_host, smtp_username, smtp_password FROM email_settings";
+		connection.query({sql:email_query,timeout:7500}, function(err, rows) {
+			if (err) {
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(17.1)) {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "DB connection was lost. Please try again."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+					logger.error({
+						"id": 17,
+						"input": req.body,
+						"query": email_query,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+				}
+			} else if (rows != undefined && rows.length == 2 && rows[0].length > 0 && rows[1].length > 0) {
+				var pwd = "";
+				var charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+				for (var i = 0; i < 7; i++) {
+					pwd += charset.charAt(Math.floor(Math.random() * charset.length));
+				}
+				var part = "";
+				if (rows[0][0].user_status == 1) {
+					part = 'We have successfully processed this request and your temporary password is:\n' + pwd;
+				} else {
+					part = 'We regret to inform you that your account has been blocked and your request has been denied.';
+				}
+				var name = rows[0][0].firstname == rows[0][0].lastname ? rows[0][0].firstname : rows[0][0].firstname + ' ' + rows[0][0].lastname;
+				var message = 'Hi ' + name + ',\n\nWe received a request to change your Tentkotta.com account\'s password.\n\n' + part + '\n\nPlease contact Tentkotta support for further assistance or information.\n\nThanks,\nTentkotta Support Team.'
+				mailer.send({
+					host: rows[1][0].smtp_host,
+					to: emailId,
+					from: rows[1][0].smtp_username,
+					subject: "Reset password request for Tentkotta.com",
+					body: message,
+					authentication: "login",
+					username: rows[1][0].smtp_username,
+					password: rows[1][0].smtp_password
+				},
+				function(err, result) {
+					if (err) {
+						res.json({
+							"error": true,
+							"errorCode": 203,
+							"message": "Sending Email Failed."
+						});
+						logger.error({
+							"id": 17,
+							"input": req.body,
+							"message": "Sending Email Failed"
+						});
+					} else {
+						var update_password = "UPDATE users SET password = '" + md5(pwd) + "' WHERE email = '" + emailId + "'; INSERT INTO ipn_email_log VALUES (NULL, " + rows[0][0].user_id + ", '" + emailId + "', 'PWD Change: " + rows[0][0].password + "', " + Math.floor(Date.now() / 1000).toString() + ")";
+						connection.query({sql:update_password,timeout:7500}, function(err, rows1) {
+							if (err) {
+								if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(17.2)) {
+									res.json({
+										"error": true,
+										"errorCode": err.code,
+										"message": "DB connection was lost. Please try again."
+									});
+								} else {
+									res.json({
+										"error": true,
+										"errorCode": err.code,
+										"message": "Query did not return required results"
+									});
+									logger.error({
+										"id": 17,
+										"input": req.body,
+										"query": update_password,
+										"errorCode": err.code,
+										"message": "Query did not return required results"
+									});
+								}
+							} else if (rows1.affectedRows != 0) {
+								res.json({
+									"httpCode": 200,
+									"response": {
+										"Email status": "Email sent Successfully"
+									}
+								});
+							} else {
+								res.json({
+									"error": true,
+									"errorCode": err.code,
+									"message": "Updating Password failed"
+								});
+								logger.error({
+									"id": 17,
+									"input": req.body,
+									"query": update_password,
+									"errorCode": err.code,
+									"message": "Error while resetting users password"
+								});
+							}
+						});
+					}
+				});
+			} else {
+				var message = "Query did not return required result.";
+				if (rows[0].length <= 0) {
+					message = "Invalid parameter(s): EmailId.";
+				} else if (rows[1].length <= 0) {
+					message = "Unable to fetch email settings.";
+				}
+				res.json({
+					"error": true,
+					"errorCode": 203,
+					"message": message
+				});
+				logger.error({
+					"id": 17,
+					"input": req.body,
+					"message": message
+				});
 			}
 		});
 	});
