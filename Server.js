@@ -13,7 +13,6 @@ function REST() {
     self.connectMysql();
 };
 
-
 REST.prototype.connectMysql = function() {
     var self = this;
     var pool = mysql.createPool({

@@ -29,9 +29,9 @@
     "express": "^4.13.3",
     "fb": "^1.0.2",
     "https": "~1.0.0",
-    "mailer": "^0.6.7",
     "mysql": "^2.10.2",
-    "winston": "^2.1.1"
+    "winston": "^2.1.1",
+	"nodemailer": "^0.7.1"
   },
   "repository": {
     "type": "git",

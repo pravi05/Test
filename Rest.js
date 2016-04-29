@@ -1,7 +1,7 @@
 var mysql = require("mysql");
 var async = require('async');
 var FB = require('fb');
-var mailer = require('mailer');
+var nodemailer = require("nodemailer");
 var logger = require("./utils/logger");
 var express = require("express");
 var app = express();
@@ -2017,7 +2017,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 	//17
 	router.post("/user/forgotPwd", function(req, res) {
 		var emailId = req.body.email;
-		var email_query = "SELECT user_id, firstname, lastname, email, password, user_status FROM users WHERE email =  '" + emailId + "' limit 1; SELECT smtp_host, smtp_username, smtp_password FROM email_settings";
+		var email_query = "SELECT user_id, firstname, lastname, email, password, user_status FROM users WHERE email =  '" + emailId + "' limit 1; SELECT smtp_host, smtp_port, smtp_username, smtp_password FROM email_settings";
 		connection.query({sql:email_query,timeout:7500}, function(err, rows) {
 			if (err) {
 				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(17.1)) {
@@ -2054,29 +2054,37 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				}
 				var name = rows[0][0].firstname == rows[0][0].lastname ? rows[0][0].firstname : rows[0][0].firstname + ' ' + rows[0][0].lastname;
 				var message = 'Hi ' + name + ',\n\nWe received a request to change your Tentkotta.com account\'s password.\n\n' + part + '\n\nPlease contact Tentkotta support for further assistance or information.\n\nThanks,\nTentkotta Support Team.'
-				mailer.send({
+				
+				var transporter = nodemailer.createTransport('SMTP', {
 					host: rows[1][0].smtp_host,
-					to: emailId,
-					from: rows[1][0].smtp_username,
-					subject: "Reset password request for Tentkotta.com",
-					body: message,
-					authentication: "login",
-					username: rows[1][0].smtp_username,
-					password: rows[1][0].smtp_password
-				},
-				function(err, result) {
-					if (err) {
-						res.json({
-							"error": true,
-							"errorCode": 203,
-							"message": "Sending Email Failed."
-						});
-						logger.error({
-							"id": 17,
-							"input": req.body,
-							"message": "Sending Email Failed"
-						});
-					} else {
+					port: rows[1][0].smtp_port,
+					secureConnection: false,
+					auth: {
+						user: rows[1][0].smtp_username,
+						pass: rows[1][0].smtp_password
+					}
+				});
+
+				transporter.sendMail({
+                    to: emailId,
+                    from: rows[1][0].smtp_username,
+                    subject: "Reset password request for Tentkotta.com",
+                    body: message,
+                },
+                function(err, result) {
+                    if (err) {
+                        res.json({
+                            "error": true,
+                            "errorCode": 203,
+                            "message": "Sending Email Failed."
+                        });
+                        logger.error({
+                            "id": 17,
+                            "input": req.body,
+							"error": err,
+                            "message": "Sending Email Failed"
+                        });
+                    } else {
 						var update_password = "UPDATE users SET password = '" + md5(pwd) + "' WHERE email = '" + emailId + "'; INSERT INTO ipn_email_log VALUES (NULL, " + rows[0][0].user_id + ", '" + emailId + "', 'PWD Change: " + rows[0][0].password + "', " + Math.floor(Date.now() / 1000).toString() + ")";
 						connection.query({sql:update_password,timeout:7500}, function(err, rows1) {
 							if (err) {
