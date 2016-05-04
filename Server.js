@@ -47,7 +47,7 @@ REST.prototype.connectMysql = function() {
         database: 'tent_net',
 		multipleStatements : 'Allow',
 		wait_timeout : 28800,
-        connect_timeout :10
+        connect_timeout :10,
         debug: false
     });
 	 self.configureExpress(connection);
