@@ -3,6 +3,7 @@ var async = require('async');
 var FB = require('fb');
 var nodemailer = require("nodemailer");
 var logger = require("./utils/logger");
+var fs = require('fs')
 var express = require("express");
 var app = express();
 
@@ -164,22 +165,6 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
             "categoryStatus": "1",
             "query": "SELECT movie_id AS video_id, movie_name AS video_title, \"\" AS sub_title, embeded_code AS mp3_url, \"\" AS mp4_url_five, movie_url AS video_url, movie_video_key AS video_key, movie_description AS video_description, \"\" AS video_price, embeded_code AS embeded_code, \"\" AS actors, \"\" AS director, \"\" AS music, \"\" AS release_year, \"\" AS total_hours, rating AS rating, \"\" AS expiry_date, \"\" AS embeded_code_preview FROM movie_song AS ms WHERE movie_status = 1 <replace>AND movie_id = <replace> AND main_movie_id != 0 ORDER BY main_movie_id ASC, song_order DESC"
         }]
-    }, {
-        "groupId": "6",
-        "groupOrder": "6",
-        "groupName": "Live Radio",
-        "groupIconUnselected": "https://www.tentkotta.com/images/Menu_Images/05a.png",
-        "groupIconSelected": "https://www.tentkotta.com/images/Menu_Images/05b.png",
-        "groupIconHover": "https://www.tentkotta.com/images/Menu_Images/05c.png",
-        "groupStatus": "0",
-        "videoType": "5",
-        "categories": [{
-            "categoryId": "1",
-            "categoryOrder": "1",
-            "categoryName": "Live Radio",
-            "categoryStatus": "1",
-            "query": "SELECT 1 AS video_id, \"8K Radio\" AS video_title, \"\" AS sub_title, \"http://cplay.8kradio.com/8kradio/av1.stream_128k/playlist.m3u8\" AS mp3_url, \"\" AS mp4_url_five, \"\" AS video_url, \"8kRadio\" AS video_key, \"\" AS video_description, \"\" AS video_price, \"rtsp://play.8kradio.com:1935/8kradio/av1.stream_128k\" AS embeded_code, \"\" AS actors, \"\" AS director, \"\" AS music, \"\" AS release_year, \"\" AS total_hours, \"\" AS rating, \"\" AS expiry_date, \"\" AS embeded_code_preview"
-        }]
     }];
     self.getGroupCategories = function() {
         var respObject = [];
@@ -243,14 +228,15 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
             }
         }
     //Root API
-	router.get("/", function(req, res) {
+	router.get("/v1/", function(req, res) {
 		res.json({
 			"message": "APIs for Tentkotta Website: https://www.tentkotta.com. To be used by various apps and integration along with Website.",
 			"dbState": connection.state
 		});
     });
     //1
-    router.post("/pin", function(req, res) {
+    router.post("/v1/pin", function(req, res) {
+		logger.info({"id": 1, "input": req.body});
 		var security_query = "SELECT * FROM api_security_codes WHERE used = 0 LIMIT 1";
 		connection.query({sql:security_query,timeout:7500}, function(err, rows) {
 			if (err) {
@@ -335,7 +321,8 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		});
     });
     //2
-    router.post("/accessToken", function(req, res) {
+    router.post("/v1/accessToken", function(req, res) {
+		logger.info({"id": 1, "input": req.body});
         var subscription_token_query = "SELECT users.email, subscription.billing_date FROM subscription INNER JOIN users ON subscription.user_id = users.user_id WHERE users.user_id = " + req.body.userId + " ORDER BY subscription.billing_date DESC LIMIT 1; SELECT device_id, device_type FROM api_access_tokens WHERE security_code = '" + req.body.pin + "' AND access_token IS NULL";
         connection.query({sql:subscription_token_query,timeout:7500}, function(err, rows) {
 			if (err) {
@@ -433,7 +420,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 
     });
     //3
-    router.get("/accessToken/:pinValue", function(req, res) {
+    router.get("/v1/accessToken/:pinValue", function(req, res) {
         var access_token_query = "SELECT api_access_tokens.access_token, api_access_tokens.access_token_status, users.email, subscription.billing_date FROM api_access_tokens INNER JOIN users ON users.user_id = api_access_tokens.user_id INNER JOIN subscription ON subscription.user_id = api_access_tokens.user_id WHERE api_access_tokens.security_code = '" + req.params.pinValue + "' ORDER by subscription.billing_date DESC LIMIT 1";
         connection.query({sql:access_token_query,timeout:7500}, function(err, rows) {
             if (err) {
@@ -660,7 +647,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		});
 	}
 	//4
-    router.post("/user/login", function(req, res) {
+    router.post("/v1/user/login", function(req, res) {
 		if (req.body.facebookAccessToken != "" && req.body.password == "") {
 			FB.setAccessToken(req.body.facebookAccessToken);
 			FB.api('fql', { q: 'SELECT uid FROM user WHERE uid=me()' }, function (result) {
@@ -692,7 +679,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		}
     });
     //5
-    router.get("/categories/:accessToken", function(req, res) {
+    router.get("/v1/categories/:accessToken", function(req, res) {
         var result = {
             "httpCode": 200,
             "response": {
@@ -740,7 +727,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         });
     });
     //6
-    router.get("/content/:grp/:cat/:count?", function(req, res) {
+    router.get("/v1/content/:grp/:cat/:count?", function(req, res) {
         var queryParams = {
             "grp": req.params.grp,
             "cat": req.params.cat,
@@ -839,8 +826,113 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
             });
         }
     });
+    //6-V2
+    router.get("/v2/content/:grp/:cat/:count?", function(req, res) {
+        var queryParams = {
+            "grp": req.params.grp,
+            "cat": req.params.cat,
+            "count": req.params.count
+        };
+
+        var grp = parseInt(queryParams.grp) <= 1 ? 1 : parseInt(queryParams.grp);
+        var cat = parseInt(queryParams.cat) <= 1 ? 1 : parseInt(queryParams.cat);
+        var movies_query = groups_categories[grp - 1].categories[cat - 1].query;
+
+        if (movies_query != undefined && movies_query != '') {
+            var splitStr = movies_query.split("<replace>");
+            var currDate = Math.floor(Date.now() / 1000).toString();
+            var videotype = groups_categories[grp - 1].videoType;
+            var cnt = parseInt(queryParams.count);
+            var result = {
+                "httpCode": 200,
+                "response": {
+                    "status": groups_categories[grp - 1].groupName + ' - ' + groups_categories[grp - 1].categories[cat - 1].categoryName + ' listed successfully.',
+                    "message": []
+                }
+            };
+
+			if (splitStr.length > 1) {
+				if (cnt > 0 || !isNaN(cnt)) {
+					splitStr[2] += ' LIMIT ' + cnt;
+				} else {
+					cnt = 0;
+				}
+				splitStr[1] = splitStr[1].indexOf("date") != -1 ? currDate : "";
+				movies_query = splitStr.join("");
+			}
+
+            connection.query({sql:movies_query,timeout:7500}, function(err, rows) {
+                if (err) {
+                    if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(6.1)) {
+                        res.json({
+                            "error": true,
+                            "errorCode": err.code,
+                            "message": "DB connection was lost. Please try again."
+                        });
+                    } else {
+                        res.json({
+                            "error": true,
+                            "errorCode": err.code,
+                            "message": "Query did not return required results"
+                        });
+                        logger.error({
+                            "id": 6,
+                            "input": req.params,
+                            "query": movies_query,
+							"errorCode": err.code,
+                            "message": "Query did not return required results"
+                        });
+                    }
+                } else if (rows != null && rows != undefined && rows.length > 0) {
+                    if (cnt == 0 || cnt > rows.length) {
+                        result.response["count"] = rows.length;
+                    }
+                    var image = videotype == 1 ? "video_images" : (grp == 5 ? "hdsong_images" : "serial");
+                    for (var i = 0; i < rows.length; i++) {
+                        result.response.message.push({
+                            "videoId": rows[i].video_id,
+                            "videoTitle": rows[i].video_title,
+                            "deviceImage": "https://www.tentkotta.com/images/" + image + "/216_312/" + rows[i].video_key + "_1.jpg",
+                            "webImage": "https://www.tentkotta.com/images/" + image + "/210_270/" + rows[i].video_key + "_1.jpg",
+                            "tvImage": "https://www.tentkotta.com/images/" + image + "/1280_480/" + rows[i].video_key + "_1.jpg",
+                            "videoType": rows[i].serial_type == 2 ? "3" : videotype,
+							"profileImage": "https://www.tentkotta.com/images/Profile_Images/" + rows[i].language_id + "/" + rows[i].video_key + ".jpg",
+							"videoDescription": rows[i].video_description,
+							"releaseYear": rows[i].release_year,
+							"totalHours": rows[i].total_hours,
+							"videoRating": rows[i].rating
+                        });
+                    }
+                    res.json(result);
+                } else {
+                    res.json({
+                        "error": true,
+                        "errorCode": 202,
+                        "message": "Query did not return required results"
+                    });
+                    logger.error({
+                        "id": 6,
+                        "input": req.params,
+                        "query": movies_query,
+                        "message": "Query did not return required results"
+                    });
+                }
+            });
+        } else {
+            res.json({
+                "error": true,
+                "errorCode": 204,
+                "message": "Invalid/No Query stored for this group and category."
+            });
+            logger.error({
+                "id": 6,
+                "input": req.params,
+                "message": "Invalid/No Query stored for this group and category."
+            });
+        }
+    });
     //7
-    router.get("/content/:grp/:cat/:id/:accessToken", function(req, res) {
+    router.get("/v1/content/:grp/:cat/:id/:accessToken", function(req, res) {
         var queryParams = {
             "grp": req.params.grp,
             "cat": req.params.cat,
@@ -1098,7 +1190,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //8
-    router.get("/search/:name?", function(req, res) {
+    router.get("/v1/search/:name?", function(req, res) {
         var result = {
             "httpCode": 200,
             "response": {
@@ -1149,18 +1241,73 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
                 }
                 res.json(result);
             } else {
+                res.json(result);               
+            }
+        });
+    });
+    //8-V2
+    router.get("/v2/search/:name?", function(req, res) {
+        var result = {
+            "httpCode": 200,
+            "response": {
+                "status": "Search results",
+                "count": 0,
+                "message": []
+            }
+        };
+        if (req.params.name != undefined) {
+            var search_query = "SELECT video_id, video_title, video_key, language_id, video_description, release_year, total_hours, rating FROM video LEFT JOIN category ON video.category_id = category.category_id WHERE video_title LIKE '%" + req.params.name + "%' AND category_status= 1 and  video_status = 1 and expiry_date>=" + Math.floor(Date.now() / 1000).toString() + " ORDER BY video_order ASC";
+        } else {
+            var search_query = "SELECT video_id, video_title, video_key, language_id, video_description, release_year, total_hours, rating FROM video WHERE video_status = 1 and expiry_date>=" + Math.floor(Date.now() / 1000).toString() + " ORDER BY video_order ASC";
+        }
+        connection.query({sql:search_query,timeout:7500}, function(err, rows) {
+            if (err) {
+                if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(8.1)) {
+                    res.json({
+                        "error": true,
+                        "errorCode": err.code,
+                        "message": "DB connection was lost. Please try again."
+                    });
+                } else {
+                    res.json({
+                        "error": true,
+                        "errorCode": err.code,
+                        "message": "Query did not return required results"
+                    });
+                    logger.error({
+                        "id": 8,
+                        "input": req.params,
+                        "query": search_query,
+						"errorCode": err.code,
+                        "message": "Query did not return required results"
+                    });
+                }
+            } else if (rows != undefined && rows.length > 0) {
+                for (var i = 0; i < rows.length; i++) {
+                    result.response.count = rows.length;
+                    result.response.message.push({
+                        "videoId": rows[i].video_id,
+                        "videoTitle": rows[i].video_title,
+                        "tvImage": "https://www.tentkotta.com/images/video_images/1280_480/" + rows[i].video_key + "_1.jpg",
+                        "deviceImage": "https://www.tentkotta.com/images/video_images/216_312/" + rows[i].video_key + "_1.jpg",
+                        "webImage": "https://www.tentkotta.com/images/video_images/210_270/" + rows[i].video_key + "_1.jpg",
+                        "videoCategory": rows[i].language_id,
+                        "videoType": 1,
+						"profileImage": "https://www.tentkotta.com/images/Profile_Images/" + rows[i].language_id + "/" + rows[i].video_key + ".jpg",
+						"videoDescription": rows[i].video_description,
+						"releaseYear": rows[i].release_year,
+						"totalHours": rows[i].total_hours,
+						"videoRating": rows[i].rating
+                    });
+                }
                 res.json(result);
-                logger.error({
-                    "id": 8,
-                    "input": req.params,
-                    "query": search_query,
-                    "message": "Query did not return required results"
-                });
+            } else {
+                res.json(result);
             }
         });
     });
     //9
-    router.get("/user/movies/:accessToken", function(req, res) {
+    router.get("/v1/user/movies/:accessToken", function(req, res) {
         var tokenParams = Base64.decode(req.params.accessToken).split('|');
         var result = {
             "httpCode": 200,
@@ -1223,7 +1370,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //10
-    router.post("/user/movies", function(req, res) {
+    router.post("/v1/user/movies", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
         if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
@@ -1332,7 +1479,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //11
-    router.get("/user/watchlists/:accessToken", function(req, res) {
+    router.get("/v1/user/watchlists/:accessToken", function(req, res) {
         var tokenParams = Base64.decode(req.params.accessToken).split('|');
         var result = {
             "httpCode": 200,
@@ -1446,7 +1593,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //11-V2
-    router.get("/user/watchlistsV2/:accessToken", function(req, res) {
+    router.get("/v1/user/watchlistsV2/:accessToken", function(req, res) {
         var tokenParams = Base64.decode(req.params.accessToken).split('|');
         var result = {
             "httpCode": 200,
@@ -1556,7 +1703,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //12
-    router.post("/user/watchlists", function(req, res) {
+    router.post("/v1/user/watchlists", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
         if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
@@ -1671,7 +1818,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //13
-    router.delete("/user/watchlists", function(req, res) {
+    router.delete("/v1/user/watchlists", function(req, res) {
         var tokenParams = Base64.decode(req.body.accessToken).split("|");
         if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
@@ -1726,7 +1873,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
     //14
-    router.post("/user/rating", function(req, res) {
+    router.post("/v1/user/rating", function(req, res) {
 		var tokenParams = Base64.decode(req.body.accessToken).split("|");
 		if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
 			res.json({
@@ -1903,7 +2050,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 		}
 	});
     //15
-	router.post("/user/activity", function(req, res) {
+	router.post("/v1/user/activity", function(req, res) {
 		var tokenParams = Base64.decode(req.body.accessToken).split("|");
         if (tokenParams == null || tokenParams == undefined || tokenParams.length != 3) {
             res.json({
@@ -1996,8 +2143,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
         }
     });
 	//16
-	router.get("/images/topshelf", function(req, res) {
-		fs = require('fs')
+	router.get("/v1/images/topshelf", function(req, res) {
 		fs.readFile('./utils/topshelf-images.json', 'utf8', function (err, data) {
 			if (err) {
 				res.json({
@@ -2010,12 +2156,15 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 					"message": "Unable to read file to get topshelf images."
 				});
 			} else {
-				res.json(JSON.parse(data));
+				var result = {"httpCode": 200 };
+				var json = JSON.parse(data);
+				result.response = json.response;
+				res.json(result);
 			}
 		});
 	});
 	//17
-	router.post("/user/forgotPwd", function(req, res) {
+	router.post("/v1/user/forgotPwd", function(req, res) {
 		var emailId = req.body.email;
 		var email_query = "SELECT user_id, firstname, lastname, email, password, user_status FROM users WHERE email =  '" + emailId + "' limit 1; SELECT smtp_host, smtp_port, smtp_username, smtp_password FROM email_settings";
 		connection.query({sql:email_query,timeout:7500}, function(err, rows) {
@@ -2054,7 +2203,7 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 				}
 				var name = rows[0][0].firstname == rows[0][0].lastname ? rows[0][0].firstname : rows[0][0].firstname + ' ' + rows[0][0].lastname;
 				var message = 'Hi ' + name + ',\n\nWe received a request to change your Tentkotta.com account\'s password.\n\n' + part + '\n\nPlease contact Tentkotta support for further assistance or information.\n\nThanks,\nTentkotta Support Team.'
-				
+
 				var transporter = nodemailer.createTransport('SMTP', {
 					host: rows[1][0].smtp_host,
 					port: rows[1][0].smtp_port,
@@ -2148,6 +2297,66 @@ REST_ROUTER.prototype.handleRoutes = function(router, connection, md5) {
 					"id": 17,
 					"input": req.body,
 					"message": message
+				});
+			}
+		});
+	});
+	//18
+	router.post("/v1/exception/logging", function(req, res){
+		var insert_query="INSERT INTO exception_log (creation_date, exception_information, screen_name, device,device_model, access_token) VALUES ('" + Math.floor(Date.now() / 1000).toString() + "','" + req.body.exception_information + "','" + req.body.screen_name + "','" + req.body.device + "', '"+req.body.device_model+"','"+ req.body.access_token+"')";
+		connection.query({sql:insert_query,timeout:7500}, function(err, rows) {
+			if (err) {
+				if (err.code == 'PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR' && self.handleDisconnect(17.1)) {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "DB connection was lost. Please try again."
+					});
+				} else {
+					res.json({
+						"error": true,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+					logger.error({
+						"id": 18,
+						"input": req.body,
+						"query": email_query,
+						"errorCode": err.code,
+						"message": "Query did not return required results"
+					});
+				}
+			}
+			else if (rows.affectedRows != 0) {
+				res.json({
+					"httpCode": 200,
+					"response": {
+						"Exception Log": "Exception logged Successfully"
+					}
+				});
+			}
+		});
+
+	});
+	//19
+	router.post("/v1/images/topshelf", function(req, res) {
+		fs.writeFile('./utils/topshelf-images.json', JSON.stringify(req.body), 'utf8', function (err, data) {
+			if (err) {
+				res.json({
+					"error": true,
+					"errorCode": 204,
+					"message": "Unable to write file to save topshelf images. Error: " + err
+				});
+				logger.error({
+					"id": 19,
+					"message": "Unable to write file to save topshelf images."
+				});
+			} else {
+				res.json({
+					"httpCode": 200,
+					"response": {
+						"status": "Topshelf Images Saved Successfully"
+					}
 				});
 			}
 		});

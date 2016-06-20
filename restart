@@ -6,7 +6,7 @@ if [ $? -eq 0 ]; then
 	test=0
 	while [ $test -eq 0 ]
 	do
-		kill $(netstat -nltp | grep '3000' | awk '{print $7}' | awk 'BEGIN { FS="/"; } { print $1; }')
+		kill $(netstat -nltp | grep '443' | awk '{print $7}' | awk 'BEGIN { FS="/"; } { print $1; }')
 		test=$?
 	done
 else

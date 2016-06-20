@@ -17,7 +17,6 @@ var logger = new winston.Logger({
         new winston.transports.File({
             name: 'info-file',
             level: 'info',
-            silent: true,
             filename: './logs/info.log',
             handleExceptions: true,
             json: true,
