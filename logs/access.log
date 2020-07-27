@@ -1,0 +1,7 @@
+::1 - - [27/Jul/2020:09:56:00 +0000] "GET /tkweb/v1/search/24 HTTP/1.1" 200 53 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:56:00 +0000] "GET /favicon.ico HTTP/1.1" 200 53 "http://localhost:5000/tkweb/v1/search/24" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:56:09 +0000] "GET /tkweb/v1/search/24 HTTP/1.1" 304 - "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:56:09 +0000] "GET /favicon.ico HTTP/1.1" 304 - "http://localhost:5000/tkweb/v1/search/24" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:56:09 +0000] "GET /tkweb/v1/search/24 HTTP/1.1" 200 53 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:57:47 +0000] "GET /tkapi/v1/search/24 HTTP/1.1" 200 311 "-" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
+::1 - - [27/Jul/2020:09:57:47 +0000] "GET /favicon.ico HTTP/1.1" 304 - "http://localhost:5000/tkapi/v1/search/24" "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.1.2 Safari/605.1.15"
